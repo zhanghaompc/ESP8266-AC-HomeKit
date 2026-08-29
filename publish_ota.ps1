@@ -84,15 +84,24 @@ function Invoke-Git([string[]]$Arguments) {
 function Publish-HeadViaGitHubApi([string]$Message) {
     $remoteHead = (gh api "repos/$Repo/git/ref/heads/$Branch" --jq .object.sha).Trim()
     $baseTree = (gh api "repos/$Repo/git/commits/$remoteHead" --jq .tree.sha).Trim()
-    $fetchExit = Invoke-Git -Arguments @('fetch', 'origin', $Branch)
-    if ($fetchExit -ne 0) {
-        Write-Warning "git fetch failed; using the remote commit returned by GitHub API."
+    $remoteTree = gh api "repos/$Repo/git/trees/${baseTree}?recursive=1" | ConvertFrom-Json
+    $remoteBlobs = @{}
+    foreach ($entry in $remoteTree.tree) {
+        if ($entry.type -eq 'blob') {
+            $remoteBlobs[$entry.path] = $entry.sha
+        }
     }
-    $objectExit = Invoke-Git -Arguments @('cat-file', '-e', "${remoteHead}^{commit}")
-    if ($objectExit -ne 0) {
-        Fail "Remote commit $remoteHead is not available locally"
+
+    $files = @()
+    foreach ($line in (git -c core.quotepath=false ls-tree -r HEAD)) {
+        if ($line -match '^\d+ blob ([0-9a-f]+)\t(.+)$') {
+            $sha = $Matches[1]
+            $path = $Matches[2]
+            if (-not $remoteBlobs.ContainsKey($path) -or $remoteBlobs[$path] -ne $sha) {
+                $files += $path
+            }
+        }
     }
-    $files = git diff --name-only $remoteHead HEAD
     if (-not $files) {
         Fail "Local HEAD has no file differences from remote $Branch"
     }
