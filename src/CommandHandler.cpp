@@ -343,10 +343,10 @@ String handleCommand(const String &cmd)
     // OTA：开始异步下载（直接 HTTP 拉包）
     if (cmd == "ota=go")
     {
-        String err;
-        if (otaManager.beginDownload(otaManager.getUrl(), err))
-            return String("ota=start fw=") + otaManager.getVersion();
-        return String("ota=fail:") + err;
+        if (otaManager.isDownloading())
+            return "ota=busy";
+        otaManager.requestDownload();
+        return String("ota=start fw=") + otaManager.getVersion();
     }
 
     return "unknown_cmd:" + cmd;

@@ -34,6 +34,8 @@ public:
     bool beginDownload(const String &downloadUrl, String &errMsg); // 开始异步下载
     int processDownload(String &errMsg, int &progressPercent);    // 主循环分片驱动
     bool isDownloading() const;
+    bool requestDownload();
+    bool consumeDownloadRequest();
     bool isNewer(const String &remote) const;        // 远端版本是否比本地新
     void requestRestart();
     bool consumeRestart();
@@ -46,6 +48,7 @@ private:
     WiFiClient *dlPlain = nullptr;
     WiFiClientSecure *dlSecure = nullptr;
     bool downloading = false;
+    bool downloadRequested = false;
     unsigned long totalRead = 0;
     unsigned long lastDataMs = 0;
     int contentLength = -1;

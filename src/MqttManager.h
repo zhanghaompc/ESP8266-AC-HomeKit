@@ -13,6 +13,7 @@ public:
     void publish(const String &payload);
     void publishStatus();
     bool isConnected();
+    void forceDisconnect();
     void setConfig(const String &host, uint16_t port, const String &user, const String &pass, const String &topic);
     String getConfigJson();
 

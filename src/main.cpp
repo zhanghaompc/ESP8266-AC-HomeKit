@@ -57,6 +57,21 @@ extern "C" homekit_characteristic_t cha_fan_rotation_speed;
 
 String loadProtocolFromFS();
 
+static bool otaKickoffPending = false;
+static unsigned long otaKickoffAt = 0;
+static String pendingOtaPublish = "";
+
+static void stopBackgroundNetwork()
+{
+    if (mqttManager.isConnected())
+        mqttManager.forceDisconnect();
+}
+
+static void queueOtaPublish(const String &payload)
+{
+    pendingOtaPublish = payload;
+}
+
 // HomeKit 目标状态 -> 发送红外
 void hkSendAc()
 {
@@ -191,8 +206,34 @@ void setup()
 void loop()
 {
     webServerEx.loop();
-    arduino_homekit_loop();
-    mqttManager.loop();
+
+    if (otaManager.consumeDownloadRequest())
+    {
+        stopBackgroundNetwork();
+        otaKickoffPending = true;
+        otaKickoffAt = millis();
+    }
+
+    if (otaKickoffPending && millis() - otaKickoffAt >= 500)
+    {
+        otaKickoffPending = false;
+        String otaErr = "";
+        if (!otaManager.beginDownload(otaManager.getUrl(), otaErr))
+        {
+            queueOtaPublish(String("ota=fail:") + otaErr);
+        }
+    }
+
+    if (!otaKickoffPending && !otaManager.isDownloading())
+    {
+        arduino_homekit_loop();
+        mqttManager.loop();
+        if (pendingOtaPublish.length() > 0 && mqttManager.isConnected())
+        {
+            mqttManager.publish(pendingOtaPublish);
+            pendingOtaPublish = "";
+        }
+    }
 
     if (otaManager.consumeRestart())
     {
@@ -212,8 +253,7 @@ void loop()
     }
     else if (st == OTA_DL_ERROR)
     {
-        mqttManager.publish("ota=idle");
-        mqttManager.publish(String("ota=fail:") + otaErr);
+        queueOtaPublish(String("ota=fail:") + otaErr);
     }
 
     sensorManager.loop();

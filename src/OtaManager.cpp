@@ -72,6 +72,21 @@ String OtaManager::getPendingUrl() const { return pendingUrl; }
 
 bool OtaManager::isDownloading() const { return downloading; }
 
+bool OtaManager::requestDownload()
+{
+    if (downloadRequested || downloading)
+        return false;
+    downloadRequested = true;
+    return true;
+}
+
+bool OtaManager::consumeDownloadRequest()
+{
+    bool r = downloadRequested;
+    downloadRequested = false;
+    return r;
+}
+
 bool OtaManager::isNewer(const String &remote) const
 {
     return isVersionNewer(remote, FW_VERSION);
@@ -136,7 +151,7 @@ bool OtaManager::beginDownload(const String &downloadUrl, String &errMsg)
         {
             dlSecure = new WiFiClientSecure();
             dlSecure->setInsecure();   // 跳过证书校验（家用可接受）
-            dlSecure->setBufferSizes(2048, 512); // 减小 TLS 缓冲，ESP8266 内存有限
+            dlSecure->setBufferSizes(1024, 512); // 进一步减小 TLS 缓冲，ESP8266 内存有限
             dlHttp = new HTTPClient();
             dlHttp->setTimeout(45000);
             if (!dlHttp->begin(*dlSecure, curUrl))
@@ -163,6 +178,8 @@ bool OtaManager::beginDownload(const String &downloadUrl, String &errMsg)
             break;
         errMsg = "HTTP GET " + String(code) + " heap=" + String(ESP.getFreeHeap());
         finishDownload();
+        delay(50);
+        yield();
     }
 
     if (code != HTTP_CODE_OK)
@@ -297,7 +314,7 @@ bool OtaManager::fetchMetadata(String &remoteVersion, String &remoteUrl, String 
         WiFiClient plainClient;
         WiFiClientSecure secureClient;
         if (isHttps)
-            secureClient.setBufferSizes(2048, 512);
+            secureClient.setBufferSizes(1024, 512);
         HTTPClient http;
         http.setTimeout(30000);
         bool beginOk;

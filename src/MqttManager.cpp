@@ -187,6 +187,12 @@ void MqttManager::publish(const String &payload)
 
 bool MqttManager::isConnected() { return client.connected(); }
 
+void MqttManager::forceDisconnect()
+{
+    if (client.connected())
+        client.disconnect();
+}
+
 void MqttManager::handleMessage(char *topic, byte *payload, unsigned int length)
 {
     String msg;
