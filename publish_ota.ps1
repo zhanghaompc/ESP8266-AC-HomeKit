@@ -161,13 +161,24 @@ function Push-Or-PublishViaApi([string]$Message) {
     return Publish-HeadViaGitHubApi $Message
 }
 
+function Resolve-CommitSha([object[]]$Output, [string]$Context) {
+    $sha = $Output |
+        ForEach-Object { $_.ToString().Trim() } |
+        Where-Object { $_ -match '^[0-9a-f]{40}$' } |
+        Select-Object -Last 1
+    if (-not $sha) {
+        Fail "No valid commit SHA returned for $Context"
+    }
+    return $sha
+}
+
 function Commit-And-Publish([string[]]$Files, [string]$Message) {
     $addExit = Invoke-Git -Arguments (@('add', '--') + $Files)
     if ($addExit -ne 0) {
         Fail "git add failed: $Message"
     }
 
-    & git diff --cached --quiet
+    & git diff --cached --quiet 2>&1 | Out-Null
     if ($LASTEXITCODE -eq 0) {
         Write-Host "No new file changes; retry publishing current HEAD."
     }
@@ -234,16 +245,18 @@ Copy-Item -LiteralPath $buildBin -Destination $releaseBin -Force
 Step "Commit and publish firmware $Version"
 $placeholderUrl = "https://fastly.jsdelivr.net/gh/$Repo@$Branch/firmware/esp8266/esp8266_wifi.bin"
 Set-OtaManifest $Version $placeholderUrl
-$releaseCommit = Commit-And-Publish @(
+$releaseOutput = @(Commit-And-Publish @(
     'src/DeviceConfig.h',
     'firmware/esp8266/esp8266_wifi.bin',
     'firmware/esp8266/ota.json'
-) "Release ESP8266 firmware v$Version"
+) "Release ESP8266 firmware v$Version")
+$releaseCommit = Resolve-CommitSha $releaseOutput 'firmware release'
 
 Step "Pin firmware URL"
 $fixedBinUrl = "https://fastly.jsdelivr.net/gh/$Repo@$releaseCommit/firmware/esp8266/esp8266_wifi.bin"
 Set-OtaManifest $Version $fixedBinUrl
-$manifestCommit = Commit-And-Publish @('firmware/esp8266/ota.json') "Pin ESP8266 v$Version OTA binary URL"
+$manifestOutput = @(Commit-And-Publish @('firmware/esp8266/ota.json') "Pin ESP8266 v$Version OTA binary URL")
+$manifestCommit = Resolve-CommitSha $manifestOutput 'manifest pin'
 
 Step "Update web panel"
 Update-PanelManifestUrl $manifestCommit
