@@ -42,6 +42,14 @@ void OtaManager::begin()
         url.replace("cdn.jsdelivr.net", "fastly.jsdelivr.net");
         saveConfigFile();
     }
+
+    // 旧仓库迁移：从 ESP32 主仓库切到 ESP8266 独立仓库
+    if (url.indexOf("ESP32-AC-HomeKit-IR") >= 0)
+    {
+        DBG("[OTA] 迁移 OTA 地址到 ESP8266 独立仓库\n");
+        url.replace("zhanghaompc/ESP32-AC-HomeKit-IR", "zhanghaompc/ESP8266-AC-HomeKit");
+        saveConfigFile();
+    }
 }
 
 void OtaManager::saveConfigFile()

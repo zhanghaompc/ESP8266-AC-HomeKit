@@ -2,7 +2,7 @@
 #include <Arduino.h>
 
 // 固件版本号（OTA 状态显示用）
-#define FW_VERSION "1.0.6"
+#define FW_VERSION "1.0.7"
 
 // ============================================================
 // 设备编号：基于 ESP8266 ChipID 的后 4 位十六进制
@@ -33,3 +33,4 @@ inline String deviceMqttBase()
 {
     return "ac/esp8266ac" + deviceSuffix();
 }
+
