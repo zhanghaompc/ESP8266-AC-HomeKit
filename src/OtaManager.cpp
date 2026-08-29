@@ -151,9 +151,10 @@ bool OtaManager::beginDownload(const String &downloadUrl, String &errMsg)
         {
             dlSecure = new WiFiClientSecure();
             dlSecure->setInsecure();   // 跳过证书校验（家用可接受）
-            dlSecure->setBufferSizes(1024, 512); // 进一步减小 TLS 缓冲，ESP8266 内存有限
+            dlSecure->setBufferSizes(512, 512); // OTA 时尽量压低 TLS 内存占用
             dlHttp = new HTTPClient();
             dlHttp->setTimeout(45000);
+            dlHttp->setReuse(false);
             if (!dlHttp->begin(*dlSecure, curUrl))
             {
                 errMsg = "HTTP begin failed";
@@ -166,6 +167,7 @@ bool OtaManager::beginDownload(const String &downloadUrl, String &errMsg)
             dlPlain = new WiFiClient();
             dlHttp = new HTTPClient();
             dlHttp->setTimeout(30000);
+            dlHttp->setReuse(false);
             if (!dlHttp->begin(*dlPlain, curUrl))
             {
                 errMsg = "HTTP begin failed";
@@ -219,7 +221,7 @@ int OtaManager::processDownload(String &errMsg, int &progressPercent)
         return OTA_DL_IDLE;
 
     Stream &s = dlHttp->getStream();
-    uint8_t buf[1024];
+    uint8_t buf[512];
     int got = 0;
     unsigned long t0 = millis();
     // 每轮尽量读满缓冲区，但最多 30ms，避免长期占用主循环
@@ -314,7 +316,7 @@ bool OtaManager::fetchMetadata(String &remoteVersion, String &remoteUrl, String 
         WiFiClient plainClient;
         WiFiClientSecure secureClient;
         if (isHttps)
-            secureClient.setBufferSizes(1024, 512);
+            secureClient.setBufferSizes(512, 512);
         HTTPClient http;
         http.setTimeout(30000);
         bool beginOk;

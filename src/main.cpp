@@ -65,6 +65,7 @@ static void stopBackgroundNetwork()
 {
     if (mqttManager.isConnected())
         mqttManager.forceDisconnect();
+    webServerEx.stop();
 }
 
 static void queueOtaPublish(const String &payload)
@@ -205,8 +206,6 @@ void setup()
 
 void loop()
 {
-    webServerEx.loop();
-
     if (otaManager.consumeDownloadRequest())
     {
         stopBackgroundNetwork();
@@ -226,6 +225,7 @@ void loop()
 
     if (!otaKickoffPending && !otaManager.isDownloading())
     {
+        webServerEx.loop();
         arduino_homekit_loop();
         mqttManager.loop();
         if (pendingOtaPublish.length() > 0 && mqttManager.isConnected())
@@ -254,6 +254,13 @@ void loop()
     else if (st == OTA_DL_ERROR)
     {
         queueOtaPublish(String("ota=fail:") + otaErr);
+    }
+
+    if (otaKickoffPending || otaManager.isDownloading())
+    {
+        delay(1);
+        yield();
+        return;
     }
 
     sensorManager.loop();
