@@ -63,6 +63,20 @@ function Invoke-GhApiJson([string]$Path, [string]$Method, [object]$Body) {
     return ($json | gh api $Path -X $Method --input - | ConvertFrom-Json)
 }
 
+function Invoke-Git([string[]]$Arguments) {
+    $oldPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $output = & git @Arguments 2>&1
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $oldPreference
+    }
+    $output | ForEach-Object { Write-Host $_ }
+    return $exitCode
+}
+
 function Publish-HeadViaGitHubApi([string]$Message) {
     $remoteHead = (gh api "repos/$Repo/git/ref/heads/$Branch" --jq .object.sha).Trim()
     $baseTree = (gh api "repos/$Repo/git/commits/$remoteHead" --jq .tree.sha).Trim()
@@ -117,8 +131,8 @@ function Publish-HeadViaGitHubApi([string]$Message) {
 }
 
 function Push-Or-PublishViaApi([string]$Message) {
-    git push origin $Branch
-    if ($LASTEXITCODE -eq 0) {
+    $pushExit = Invoke-Git -Arguments @('push', 'origin', $Branch)
+    if ($pushExit -eq 0) {
         return (git rev-parse HEAD).Trim()
     }
 
@@ -127,9 +141,13 @@ function Push-Or-PublishViaApi([string]$Message) {
 }
 
 function Commit-And-Publish([string[]]$Files, [string]$Message) {
-    git add -- $Files
-    git commit -m $Message
-    if ($LASTEXITCODE -ne 0) {
+    $addExit = Invoke-Git -Arguments (@('add', '--') + $Files)
+    if ($addExit -ne 0) {
+        Fail "git add failed: $Message"
+    }
+
+    $commitExit = Invoke-Git -Arguments @('commit', '-m', $Message)
+    if ($commitExit -ne 0) {
         Fail "git commit failed: $Message"
     }
     return Push-Or-PublishViaApi $Message
@@ -205,7 +223,7 @@ Update-PanelManifestUrl $manifestCommit
 
 Step "Verify remote manifest"
 $manifestUrl = "https://fastly.jsdelivr.net/gh/$Repo@$manifestCommit/firmware/esp8266/ota.json"
-$remoteManifest = Invoke-RestMethod -Uri "$manifestUrl?ts=$(Get-Date -Format yyyyMMddHHmmss)"
+$remoteManifest = Invoke-RestMethod -Uri "${manifestUrl}?ts=$(Get-Date -Format yyyyMMddHHmmss)"
 $remoteManifest | ConvertTo-Json -Compress | Write-Host
 
 Write-Host ""
