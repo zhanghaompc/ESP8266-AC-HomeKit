@@ -1,6 +1,4 @@
 param(
-    [Parameter(Mandatory = $true)]
-    [ValidatePattern('^\d+\.\d+\.\d+$')]
     [string]$Version,
 
     [string]$Repo = 'zhanghaompc/ESP8266-AC-HomeKit',
@@ -10,6 +8,14 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+if (-not $Version) {
+    $Version = Read-Host '请输入要发布的版本号，例如 1.0.11'
+}
+
+if ($Version -notmatch '^\d+\.\d+\.\d+$') {
+    throw "[发布失败] 版本号格式不对：$Version，请使用类似 1.0.11 的格式。"
+}
 
 function Step([string]$Message) {
     Write-Host ""
