@@ -38,6 +38,32 @@
 
 ## 发布新版本时的固定流程
 
+### 一键脚本
+
+在 ESP8266 仓库目录执行：
+
+```powershell
+.\publish_ota.ps1 -Version 1.0.11
+```
+
+脚本会自动完成：
+
+1. 修改 `src\DeviceConfig.h` 版本号。
+2. 编译 `esp8266_homekit`。
+3. 复制 `.pio\build\esp8266_homekit\firmware.bin` 到 `firmware\esp8266\esp8266_wifi.bin`。
+4. 提交并发布固件到 GitHub。
+5. 用固件 commit 固定 URL 回填 `firmware\esp8266\ota.json`。
+6. 再发布 OTA 清单。
+7. 更新 ESP32 控制台里的 ESP8266 清单地址。
+
+如果不想自动改 ESP32 控制台，可以加：
+
+```powershell
+.\publish_ota.ps1 -Version 1.0.11 -SkipPanelUpdate
+```
+
+### 手动流程
+
 1. 修改 `src/DeviceConfig.h` 里的 `FW_VERSION`。
 2. 编译：
    `C:\Users\zhanghao\.platformio\penv\Scripts\platformio.exe run -e esp8266_homekit`
