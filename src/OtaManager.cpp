@@ -10,7 +10,7 @@
 
 #define OTA_CONFIG_FILE "/ota.json"
 // ESP8266 固件放在 firmware/esp8266/ 下，直接使用 HTTP 拉取，不再走 MQTT 分包升级
-#define OTA_DEFAULT_URL "https://fastly.jsdelivr.net/gh/zhanghaompc/ESP32-AC-HomeKit-IR@master/firmware/esp8266/esp8266_wifi.bin"
+#define OTA_DEFAULT_URL "https://fastly.jsdelivr.net/gh/zhanghaompc/ESP8266-AC-HomeKit@master/firmware/esp8266/esp8266_wifi.bin"
 
 void OtaManager::begin()
 {
@@ -348,3 +348,4 @@ bool OtaManager::isVersionNewer(const String &remote, const String &current) con
 }
 
 OtaManager otaManager;
+
