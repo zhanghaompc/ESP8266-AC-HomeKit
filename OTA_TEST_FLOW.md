@@ -72,12 +72,12 @@ publish_ota_click.bat
 4. 提交并发布固件到 GitHub。
 5. 用固件 commit 固定 URL 回填 `firmware\esp8266\ota.json`。
 6. 再发布 OTA 清单。
-7. 更新 ESP32 控制台里的 ESP8266 清单地址。
+7. 默认不修改网页控制台。
 
-如果不想自动改 ESP32 控制台，可以加：
+如果确实需要同步更新 ESP32 网页控制台里的 ESP8266 清单地址，可以加：
 
 ```powershell
-.\publish_ota.ps1 -Version 1.0.11 -SkipPanelUpdate
+.\publish_ota.ps1 -Version 1.0.11 -UpdatePanel
 ```
 
 ### 手动流程

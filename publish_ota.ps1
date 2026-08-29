@@ -4,7 +4,7 @@ param(
     [string]$Repo = 'zhanghaompc/ESP8266-AC-HomeKit',
     [string]$Branch = 'master',
     [string]$PanelPath = 'D:\ESP-Project\15.ESP32_AC_USB _ble\15.ESP32_AC_USB _ble\MQTT_CONTROL\index.html',
-    [switch]$SkipPanelUpdate
+    [switch]$UpdatePanel
 )
 
 $ErrorActionPreference = 'Stop'
@@ -154,8 +154,8 @@ function Commit-And-Publish([string[]]$Files, [string]$Message) {
 }
 
 function Update-PanelManifestUrl([string]$ManifestCommit) {
-    if ($SkipPanelUpdate) {
-        Write-Host "Skip panel update."
+    if (-not $UpdatePanel) {
+        Write-Host "Skip panel update. Use -UpdatePanel if you want to update the web panel manifest URL."
         return
     }
     if (-not (Test-Path $PanelPath)) {
