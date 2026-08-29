@@ -10,7 +10,7 @@
 
 #define OTA_CONFIG_FILE "/ota.json"
 // ESP8266 固件放在 firmware/esp8266/ 下，直接使用 HTTP 拉取，不再走 MQTT 分包升级
-#define OTA_DEFAULT_URL "https://fastly.jsdelivr.net/gh/zhanghaompc/ESP8266-AC-HomeKit@master/firmware/esp8266/esp8266_wifi.bin"
+#define OTA_DEFAULT_URL "https://raw.githubusercontent.com/zhanghaompc/ESP8266-AC-HomeKit/master/firmware/esp8266/esp8266_wifi.bin"
 
 void OtaManager::begin()
 {
@@ -115,6 +115,14 @@ bool OtaManager::setUrl(const String &u)
     return true;
 }
 
+void OtaManager::useLatestUrl()
+{
+    if (url == OTA_DEFAULT_URL)
+        return;
+    url = OTA_DEFAULT_URL;
+    saveConfigFile();
+}
+
 int OtaManager::checkForUpdate(String &remoteVersion, String &errMsg)
 {
     if (url.length() == 0)
@@ -146,6 +154,11 @@ bool OtaManager::beginDownload(const String &downloadUrl, String &errMsg)
     for (int attempt = 1; attempt <= 2; attempt++)
     {
         String curUrl = downloadUrl;
+        if (curUrl.indexOf("raw.githubusercontent.com/") >= 0 &&
+            curUrl.indexOf("/master/") >= 0 && curUrl.indexOf('?') < 0)
+        {
+            curUrl += "?ota=" + String(ESP.getChipId(), HEX) + "-" + String(millis());
+        }
         bool isHttps = curUrl.startsWith("https://");
         if (isHttps)
         {

@@ -327,17 +327,27 @@ String handleCommand(const String &cmd)
         return otaManager.setUrl(u) ? "ota=url ok" : "ota=url invalid";
     }
 
-    // OTA（ESP8266 面板驱动版）：面板直接告诉设备最新版本号，设备自行比较
-    if (cmd.startsWith("ota=check "))
+    // Keep the old panel compatible while the device owns the OTA source.
+    if (cmd == "ota=check" || cmd.startsWith("ota=check "))
     {
-        String rest = cmd.substring(10);
-        rest.trim();
-        int sp = rest.indexOf(' ');
-        String ver = (sp < 0) ? rest : rest.substring(0, sp);
-        ver.trim();
-        if (ver.length() > 0 && otaManager.isNewer(ver))
-            return String("ota=found ") + ver;
-        return String("ota=uptodate ") + otaManager.getVersion();
+        otaManager.useLatestUrl();
+        if (!otaManager.requestDownload())
+            return "ota=busy";
+        return String("ota=start fw=") + otaManager.getVersion();
+    }
+
+    // Legacy confirmation starts a direct HTTP OTA; its binary chunks are discarded by MQTT.
+    if (cmd.startsWith("ota=start"))
+    {
+        otaManager.useLatestUrl();
+        if (!otaManager.requestDownload())
+            return "ota=busy";
+        return String("ota=start fw=") + otaManager.getVersion();
+    }
+
+    if (cmd == "ota=end")
+    {
+        return "";
     }
 
     // OTA：开始异步下载（直接 HTTP 拉包）

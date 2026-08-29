@@ -44,12 +44,16 @@ function Get-PlatformIo {
 
 function Set-FirmwareVersion([string]$Value) {
     $path = Join-Path $PSScriptRoot 'src\DeviceConfig.h'
-    $text = Get-Content -LiteralPath $path -Raw
-    $next = $text -replace '#define FW_VERSION ".*"', ('#define FW_VERSION "' + $Value + '"')
-    if ($next -eq $text) {
+    # Latin-1 gives a byte-for-byte round trip, including legacy malformed comment bytes.
+    $encoding = [Text.Encoding]::GetEncoding(28591)
+    $text = $encoding.GetString([IO.File]::ReadAllBytes($path))
+    if ($text -notmatch '#define FW_VERSION ".*"') {
         Fail "FW_VERSION was not found in src\DeviceConfig.h"
     }
-    Set-Content -LiteralPath $path -Value $next -NoNewline
+    $next = $text -replace '#define FW_VERSION ".*"', ('#define FW_VERSION "' + $Value + '"')
+    if ($next -ne $text) {
+        [IO.File]::WriteAllBytes($path, $encoding.GetBytes($next))
+    }
 }
 
 function Set-OtaManifest([string]$Value, [string]$Url) {
@@ -80,9 +84,17 @@ function Invoke-Git([string[]]$Arguments) {
 function Publish-HeadViaGitHubApi([string]$Message) {
     $remoteHead = (gh api "repos/$Repo/git/ref/heads/$Branch" --jq .object.sha).Trim()
     $baseTree = (gh api "repos/$Repo/git/commits/$remoteHead" --jq .tree.sha).Trim()
-    $files = git diff-tree --no-commit-id --name-only -r HEAD
+    $fetchExit = Invoke-Git -Arguments @('fetch', 'origin', $Branch)
+    if ($fetchExit -ne 0) {
+        Write-Warning "git fetch failed; using the remote commit returned by GitHub API."
+    }
+    $objectExit = Invoke-Git -Arguments @('cat-file', '-e', "${remoteHead}^{commit}")
+    if ($objectExit -ne 0) {
+        Fail "Remote commit $remoteHead is not available locally"
+    }
+    $files = git diff --name-only $remoteHead HEAD
     if (-not $files) {
-        Fail "Current HEAD has no files to publish"
+        Fail "Local HEAD has no file differences from remote $Branch"
     }
 
     $tree = @()
@@ -146,9 +158,15 @@ function Commit-And-Publish([string[]]$Files, [string]$Message) {
         Fail "git add failed: $Message"
     }
 
-    $commitExit = Invoke-Git -Arguments @('commit', '-m', $Message)
-    if ($commitExit -ne 0) {
-        Fail "git commit failed: $Message"
+    & git diff --cached --quiet
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "No new file changes; retry publishing current HEAD."
+    }
+    else {
+        $commitExit = Invoke-Git -Arguments @('commit', '-m', $Message)
+        if ($commitExit -ne 0) {
+            Fail "git commit failed: $Message"
+        }
     }
     return Push-Or-PublishViaApi $Message
 }

@@ -30,6 +30,7 @@ public:
     String getVersion() const;
     String getPendingUrl() const;
     bool setUrl(const String &url);
+    void useLatestUrl();
     int checkForUpdate(String &remoteVersion, String &errMsg); // 只查版本，不下载
     bool beginDownload(const String &downloadUrl, String &errMsg); // 开始异步下载
     int processDownload(String &errMsg, int &progressPercent);    // 主循环分片驱动

@@ -195,7 +195,18 @@ void MqttManager::forceDisconnect()
 
 void MqttManager::handleMessage(char *topic, byte *payload, unsigned int length)
 {
+    static const char OTA_CHUNK_PREFIX[] = "ota=chunk ";
+    const unsigned int otaChunkPrefixLen = sizeof(OTA_CHUNK_PREFIX) - 1;
+    if (length >= otaChunkPrefixLen &&
+        memcmp(payload, OTA_CHUNK_PREFIX, otaChunkPrefixLen) == 0)
+    {
+        // HTTP OTA owns the transfer. Drop legacy binary chunks before allocating a String.
+        DBG("[MQTT] Ignore legacy OTA chunk (%u bytes)\n", length);
+        return;
+    }
+
     String msg;
+    msg.reserve(length);
     for (unsigned int i = 0; i < length; i++)
         msg += (char)payload[i];
     DBG("[MQTT] 收到指令: %s\n", msg.c_str());
