@@ -10,11 +10,11 @@ param(
 $ErrorActionPreference = 'Stop'
 
 if (-not $Version) {
-    $Version = Read-Host '请输入要发布的版本号，例如 1.0.11'
+    $Version = Read-Host 'Enter version to publish, for example 1.0.11'
 }
 
 if ($Version -notmatch '^\d+\.\d+\.\d+$') {
-    throw "[发布失败] 版本号格式不对：$Version，请使用类似 1.0.11 的格式。"
+    throw "[Publish failed] Bad version format: $Version. Use a format like 1.0.11."
 }
 
 function Step([string]$Message) {
@@ -23,12 +23,12 @@ function Step([string]$Message) {
 }
 
 function Fail([string]$Message) {
-    throw "[发布失败] $Message"
+    throw "[Publish failed] $Message"
 }
 
 function Require-Command([string]$Name) {
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
-        Fail "找不到命令：$Name"
+        Fail "Command not found: $Name"
     }
 }
 
@@ -39,7 +39,7 @@ function Get-PlatformIo {
     $fallback = Join-Path $env:USERPROFILE '.platformio\penv\Scripts\platformio.exe'
     if (Test-Path $fallback) { return $fallback }
 
-    Fail "找不到 PlatformIO。请确认 platformio.exe 已安装。"
+    Fail "PlatformIO was not found. Please check platformio.exe installation."
 }
 
 function Set-FirmwareVersion([string]$Value) {
@@ -47,7 +47,7 @@ function Set-FirmwareVersion([string]$Value) {
     $text = Get-Content -LiteralPath $path -Raw
     $next = $text -replace '#define FW_VERSION ".*"', ('#define FW_VERSION "' + $Value + '"')
     if ($next -eq $text) {
-        Fail "没有在 src\DeviceConfig.h 找到 FW_VERSION"
+        Fail "FW_VERSION was not found in src\DeviceConfig.h"
     }
     Set-Content -LiteralPath $path -Value $next -NoNewline
 }
@@ -68,7 +68,7 @@ function Publish-HeadViaGitHubApi([string]$Message) {
     $baseTree = (gh api "repos/$Repo/git/commits/$remoteHead" --jq .tree.sha).Trim()
     $files = git diff-tree --no-commit-id --name-only -r HEAD
     if (-not $files) {
-        Fail "当前 HEAD 没有可发布文件"
+        Fail "Current HEAD has no files to publish"
     }
 
     $tree = @()
@@ -122,7 +122,7 @@ function Push-Or-PublishViaApi([string]$Message) {
         return (git rev-parse HEAD).Trim()
     }
 
-    Write-Warning "git push 失败，改用 GitHub API 发布。"
+    Write-Warning "git push failed. Publishing with GitHub API instead."
     return Publish-HeadViaGitHubApi $Message
 }
 
@@ -130,18 +130,18 @@ function Commit-And-Publish([string[]]$Files, [string]$Message) {
     git add -- $Files
     git commit -m $Message
     if ($LASTEXITCODE -ne 0) {
-        Fail "git commit 失败：$Message"
+        Fail "git commit failed: $Message"
     }
     return Push-Or-PublishViaApi $Message
 }
 
 function Update-PanelManifestUrl([string]$ManifestCommit) {
     if ($SkipPanelUpdate) {
-        Write-Host "跳过网页控制台更新。"
+        Write-Host "Skip panel update."
         return
     }
     if (-not (Test-Path $PanelPath)) {
-        Write-Warning "找不到网页控制台：$PanelPath"
+        Write-Warning "Panel file was not found: $PanelPath"
         return
     }
 
@@ -151,42 +151,42 @@ function Update-PanelManifestUrl([string]$ManifestCommit) {
     $text = Get-Content -LiteralPath $PanelPath -Raw
     $next = [regex]::Replace($text, $pattern, $url)
     if ($next -eq $text) {
-        Write-Warning "网页控制台里没有找到旧 ESP8266 OTA 清单地址，请手动检查。"
+        Write-Warning "Old ESP8266 OTA manifest URL was not found in the panel. Please check manually."
         return
     }
     Set-Content -LiteralPath $PanelPath -Value $next -NoNewline
-    Write-Host "网页控制台已更新到清单 commit：$ManifestCommit"
+    Write-Host "Panel manifest commit updated: $ManifestCommit"
 }
 
 Set-Location $PSScriptRoot
 
-Step "检查工具"
+Step "Check tools"
 Require-Command git
 Require-Command gh
 $platformio = Get-PlatformIo
 gh auth status | Out-Host
 
-Step "检查工作区"
+Step "Check working tree"
 $dirty = git status --porcelain -- firmware/esp8266/esp8266_wifi.bin firmware/esp8266/ota.json src/DeviceConfig.h src/OtaManager.cpp src/main.cpp src/MqttManager.cpp src/MqttManager.h src/OtaManager.h src/CommandHandler.cpp
 if ($dirty) {
-    Fail "OTA 相关文件还有未提交改动，请先处理：`n$dirty"
+    Fail "OTA related files have uncommitted changes. Please handle them first:`n$dirty"
 }
 
-Step "设置固件版本 $Version"
+Step "Set firmware version $Version"
 Set-FirmwareVersion $Version
 
-Step "编译固件"
+Step "Build firmware"
 & $platformio run -e esp8266_homekit
 if ($LASTEXITCODE -ne 0) {
-    Fail "PlatformIO 编译失败"
+    Fail "PlatformIO build failed"
 }
 
-Step "复制固件到发布目录"
+Step "Copy firmware to release path"
 $buildBin = Join-Path $PSScriptRoot '.pio\build\esp8266_homekit\firmware.bin'
 $releaseBin = Join-Path $PSScriptRoot 'firmware\esp8266\esp8266_wifi.bin'
 Copy-Item -LiteralPath $buildBin -Destination $releaseBin -Force
 
-Step "提交并发布固件 $Version"
+Step "Commit and publish firmware $Version"
 $placeholderUrl = "https://fastly.jsdelivr.net/gh/$Repo@$Branch/firmware/esp8266/esp8266_wifi.bin"
 Set-OtaManifest $Version $placeholderUrl
 $releaseCommit = Commit-And-Publish @(
@@ -195,23 +195,23 @@ $releaseCommit = Commit-And-Publish @(
     'firmware/esp8266/ota.json'
 ) "Release ESP8266 firmware v$Version"
 
-Step "回填固定固件 URL"
+Step "Pin firmware URL"
 $fixedBinUrl = "https://fastly.jsdelivr.net/gh/$Repo@$releaseCommit/firmware/esp8266/esp8266_wifi.bin"
 Set-OtaManifest $Version $fixedBinUrl
 $manifestCommit = Commit-And-Publish @('firmware/esp8266/ota.json') "Pin ESP8266 v$Version OTA binary URL"
 
-Step "更新网页控制台"
+Step "Update web panel"
 Update-PanelManifestUrl $manifestCommit
 
-Step "验证远端清单"
+Step "Verify remote manifest"
 $manifestUrl = "https://fastly.jsdelivr.net/gh/$Repo@$manifestCommit/firmware/esp8266/ota.json"
 $remoteManifest = Invoke-RestMethod -Uri "$manifestUrl?ts=$(Get-Date -Format yyyyMMddHHmmss)"
 $remoteManifest | ConvertTo-Json -Compress | Write-Host
 
 Write-Host ""
-Write-Host "发布完成：" -ForegroundColor Green
-Write-Host "版本：$Version"
-Write-Host "清单：$manifestUrl"
-Write-Host "固件：$fixedBinUrl"
+Write-Host "Publish finished:" -ForegroundColor Green
+Write-Host "Version: $Version"
+Write-Host "Manifest: $manifestUrl"
+Write-Host "Firmware: $fixedBinUrl"
 Write-Host ""
-Write-Host "测试：刷新网页控制台，选择 ESP8266 空调，点击检查更新。"
+Write-Host "Test: refresh the web panel, select ESP8266 AC, then click check update."
