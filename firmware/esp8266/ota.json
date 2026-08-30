@@ -1,1 +1,4 @@
-{"version":"1.0.12","url":"https://fastly.jsdelivr.net/gh/zhanghaompc/ESP8266-AC-HomeKit@1fea6165da6199c6a5bc906f416687ee7db000de/firmware/esp8266/esp8266_wifi.bin"}
+{
+  "version": "1.0.13",
+  "url": "https://fastly.jsdelivr.net/gh/zhanghaompc/ESP8266-AC-HomeKit@master/firmware/esp8266/esp8266_wifi.bin"
+}
