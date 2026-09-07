@@ -204,6 +204,7 @@ void reportHomeKit()
 void setup()
 {
     Serial.begin(115200);
+    Serial.printf("[FW] ESP8266 空调控制器 固件版本 %s\n", FW_VERSION);
     if (!LittleFS.begin())
         Serial.println("LittleFS 初始化失败");
     otaManager.begin();
