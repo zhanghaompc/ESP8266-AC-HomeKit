@@ -129,14 +129,12 @@ int homekit_storage_init() {
 
 
 int homekit_storage_reset() {
-    byte blank[sizeof(magic1)];
-    memset(blank, 0, sizeof(blank));
-
-    if (!spiflash_write(MAGIC_ADDR, blank, sizeof(blank))) {
-        ERROR("Failed to reset HomeKit storage");
+    // 直接擦除整个 HomeKit 存储扇区，确保 accessory ID、密钥和配对表全部清除。
+    // 仅覆盖 magic 标记在部分 ESP8266 SDK/Flash 驱动下可能不会真正擦除旧数据。
+    if (!spiflash_erase_sector(STORAGE_BASE_ADDR)) {
+        ERROR("Failed to erase HomeKit storage");
         return -1;
     }
-
     return homekit_storage_init();
 }
 

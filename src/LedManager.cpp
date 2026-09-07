@@ -67,6 +67,13 @@ void LedManager::blinkWhite()
     lastBlinkTime = millis(); leds[0] = blinkColor; FastLED.show();
 }
 
+void LedManager::blinkYellow()
+{
+    if (blinking && blinkColor == CRGB::Yellow) return;
+    blinking = true; blinkColor = CRGB::Yellow; blinkState = true;
+    lastBlinkTime = millis(); leds[0] = blinkColor; FastLED.show();
+}
+
 void LedManager::stopBlink() { blinking = false; }
 
 void LedManager::off()

@@ -18,6 +18,7 @@ public:
     void blinkRed();
     void blinkPurple();
     void blinkWhite();
+    void blinkYellow();
     void stopBlink();
     void off();
     void update();

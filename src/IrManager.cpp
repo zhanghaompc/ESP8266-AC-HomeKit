@@ -18,7 +18,8 @@ void IrManager::begin()
 
 void IrManager::loop()
 {
-    processReceive();   // 红外接收：普通模式打印，学习模式捕获
+    if (learning)
+        processReceive();   // 仅协议学习时启用红外识别，平时关闭
 
     if (!pending)
         return;
@@ -51,13 +52,13 @@ void IrManager::beginLearn()
     learning = true;
     learnedProtocol = "";
     irrecv.enableIRIn();
-    ledManager.blinkPurple();   // 学习模式 = 紫灯
+    ledManager.setSteady(CRGB::Purple);   // 学习模式 = 紫色常亮
 }
 
 void IrManager::stopLearning()
 {
     learning = false;
-    ledManager.stopBlink();
+    ledManager.off();   // 学习结束回到当前状态灯
 }
 
 String IrManager::getLearnedProtocol() const

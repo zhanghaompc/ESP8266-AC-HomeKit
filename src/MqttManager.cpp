@@ -19,7 +19,8 @@ MqttManager::MqttManager() : client(wifiClient) {}
 void MqttManager::begin()
 {
     loadConfig();
-    client.setBufferSize(1024);
+    // 当前状态包和控制指令均小于 512 字节，避免占用 HomeKit SRP 所需堆空间。
+    client.setBufferSize(512);
     client.setServer(host.c_str(), port);
     client.setCallback(MqttManager::onMessage);
     DBG("[MQTT] 初始化 host=%s port=%d topic=%s\n", host.c_str(), port, topic.c_str());
@@ -33,7 +34,7 @@ void MqttManager::loadConfig()
         port = 1883;
         user = "";
         pass = "";
-        topic = deviceMqttBase();   // 例如 ac/esp8266aca1b2
+        topic = deviceMqttBase();   // 例如 ac/esp8266/a1b2
         saveConfig();
         return;
     }
@@ -56,6 +57,20 @@ void MqttManager::loadConfig()
     user = doc["user"] | "";
     pass = doc["pass"] | "";
     topic = doc["topic"] | "";
+    // 当前固件统一使用 ac/esp8266/<芯片后四位>，覆盖旧固件保存的主题。
+    const String oldPrefix = "ac/esp8266ac";
+    if (topic.startsWith(oldPrefix))
+    {
+        String oldTopic = topic;
+        topic = deviceMqttBase();
+        saveConfig();
+        DBG("[MQTT] 主题已迁移: %s -> %s\n", oldTopic.c_str(), topic.c_str());
+    }
+    else if (topic.length() == 0)
+    {
+        topic = deviceMqttBase();
+        saveConfig();
+    }
 }
 
 void MqttManager::saveConfig()
@@ -192,6 +207,20 @@ void MqttManager::forceDisconnect()
     if (client.connected())
         client.disconnect();
 }
+
+// HomeKit 配对前调用：SRP 加密需要 ~14KB 连续堆，把 MQTT 缓冲缩到最小腾内存
+void MqttManager::releaseMemoryForPairing()
+{
+    if (client.connected())
+        client.disconnect();
+    client.setBufferSize(64);
+}
+
+void MqttManager::restoreMemoryForNormal()
+{
+    client.setBufferSize(512);
+}
+
 
 void MqttManager::handleMessage(char *topic, byte *payload, unsigned int length)
 {

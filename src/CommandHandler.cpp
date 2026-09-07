@@ -7,6 +7,7 @@
 #include <LittleFS.h>
 #include <IRremoteESP8266.h>
 #include <IRac.h>
+#include <arduino_homekit_server.h>
 
 extern IrManager irManager;
 extern TimerManager timerManager;
@@ -15,6 +16,9 @@ extern float envTemperature;
 extern float enHumidity;
 extern String lastProtocolName;
 extern OtaManager otaManager;
+extern bool recoveryRestartPending;
+extern bool recoveryIsFactory;
+extern unsigned long recoveryRestartAt;
 
 std::map<String, decode_type_t> protocolMap = {
     {"UNKNOWN", UNKNOWN}, {"UNUSED", UNUSED}, {"RC5", RC5}, {"RC6", RC6},
@@ -196,7 +200,7 @@ String handleCommand(const String &cmd)
         {
             int hour = 0, minute = 0, temp = 25, mode = 0, speed = 0;
             bool power = true, repeat = false;
-            int pos = 4;
+            size_t pos = 4;
             while (pos < timerCmd.length())
             {
                 int semi = timerCmd.indexOf(';', pos);
@@ -219,7 +223,7 @@ String handleCommand(const String &cmd)
         {
             int id = 0, hour = 0, minute = 0, temp = 25, mode = 0, speed = 0;
             bool power = true, repeat = false;
-            int pos = 7;
+            size_t pos = 7;
             while (pos < timerCmd.length())
             {
                 int semi = timerCmd.indexOf(';', pos);
@@ -317,6 +321,38 @@ String handleCommand(const String &cmd)
     {
         ESP.restart();
         return "reset=ok";
+    }
+
+    if (cmd == "hkreset")
+    {
+        homekit_storage_reset();   // 清 HomeKit 配对
+        recoveryIsFactory = true;
+        recoveryRestartPending = true;
+        recoveryRestartAt = millis();
+        return "hkreset=ok";
+    }
+
+    if (cmd == "wifi_config")
+    {
+        LittleFS.remove("/wifi.json");  // 清配网凭据
+        ESP.eraseConfig();                // 清 SDK 旧凭据（重启后生效）
+        recoveryIsFactory = false;   // 重新配网：不白闪
+        recoveryRestartPending = true;
+        recoveryRestartAt = millis();
+        return "wifi_config=ok";
+    }
+
+    if (cmd == "reset_factory")
+    {
+        LittleFS.remove("/wifi.json");  // 清配网凭据
+        ESP.eraseConfig();                // 清 SDK 旧凭据（重启后生效）
+        homekit_storage_reset();           // 清 HomeKit 配对
+        LittleFS.remove("/timers.txt");   // 清定时任务
+        LittleFS.remove("/protocol.txt"); // 清协议配置
+        recoveryIsFactory = true;   // 恢复出厂：重启前白闪
+        recoveryRestartPending = true;
+        recoveryRestartAt = millis();
+        return "reset=ok";   // 面板按 reset=ok 识别
     }
 
     // OTA：面板从 GitHub 查到最新版本后下发固定地址（手机端免手动设置）

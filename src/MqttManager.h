@@ -14,6 +14,8 @@ public:
     void publishStatus();
     bool isConnected();
     void forceDisconnect();
+    void releaseMemoryForPairing();  // HomeKit 配对前：断开 MQTT 并把缓冲缩到最小，释放堆内存
+    void restoreMemoryForNormal();   // 配对结束：恢复缓冲大小，loop() 会自动重连
     void setConfig(const String &host, uint16_t port, const String &user, const String &pass, const String &topic);
     String getConfigJson();
 

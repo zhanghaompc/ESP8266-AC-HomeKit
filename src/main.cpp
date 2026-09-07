@@ -13,14 +13,16 @@
 #include "MqttManager.h"
 #include "OtaManager.h"
 #include "CommandHandler.h"
-#include "WebServerEx.h"
+#include "DeviceConfig.h"
+#include "WifiManagerEx.h"
 
 IrManager irManager;
 SensorManager sensorManager;
 LedManager ledManager;
 TimerManager timerManager;
 MqttManager mqttManager;
-WebServerEx webServerEx;
+
+WifiManagerEx wifiManager;
 
 IRac ac(IR_TX_PIN);
 String lastProtocolName = "KELVINATOR";
@@ -61,16 +63,63 @@ static bool otaKickoffPending = false;
 static unsigned long otaKickoffAt = 0;
 static String pendingOtaPublish = "";
 
+// 重新配网/恢复出厂命令的延迟重启（先让 MQTT 把回复发出去）
+bool recoveryRestartPending = false;
+bool recoveryIsFactory = false;   // true=恢复出厂类（重启前白闪），false=重新配网
+unsigned long recoveryRestartAt = 0;
+
 static void stopBackgroundNetwork()
 {
     if (mqttManager.isConnected())
         mqttManager.forceDisconnect();
-    webServerEx.stop();
 }
 
 static void queueOtaPublish(const String &payload)
 {
     pendingOtaPublish = payload;
+}
+
+// BOOT 按键（GPIO2）长按：1.5s 黄灯等待恢复出厂，继续按住到 3s 执行
+static unsigned long keyPressedAt = 0;
+static bool keyArmed = false;
+
+static void handleFactoryResetButton()
+{
+    if (digitalRead(KEY_PIN) == LOW)
+    {
+        if (keyPressedAt == 0)
+            keyPressedAt = millis();
+        unsigned long held = millis() - keyPressedAt;
+        if (!keyArmed && held >= 1500)
+        {
+            keyArmed = true;
+            ledManager.setSteady(CRGB::Yellow);   // 等待恢复出厂：黄色常亮
+            Serial.println("[按键] 长按 1.5s，进入恢复出厂等待（继续按住到 3s 执行）");
+        }
+        if (keyArmed && held >= 3000)
+        {
+            keyArmed = false;
+            keyPressedAt = 0;
+            Serial.println("[按键] 执行恢复出厂设置");
+            LittleFS.remove("/wifi.json");  // 清配网凭据
+            ESP.eraseConfig();                // 清 SDK 旧凭据（重启后生效）
+            homekit_storage_reset();          // 清 HomeKit 配对
+            LittleFS.remove("/timers.txt");   // 清定时任务
+            LittleFS.remove("/protocol.txt"); // 清协议配置
+            recoveryIsFactory = true;
+            recoveryRestartPending = true;
+            recoveryRestartAt = millis();
+        }
+    }
+    else
+    {
+        if (keyArmed)
+        {
+            keyArmed = false;
+            ledManager.off();   // 未按满 3s，取消恢复出厂
+        }
+        keyPressedAt = 0;
+    }
 }
 
 // HomeKit 目标状态 -> 发送红外
@@ -160,6 +209,10 @@ void setup()
     otaManager.begin();
 
     ledManager.begin();
+    ledManager.off();   // 上电初始化：熄灭
+
+    pinMode(KEY_PIN, INPUT_PULLUP);   // BOOT 按键（按下为低）
+
     sensorManager.begin();
     irManager.begin();
     timerManager.begin();
@@ -170,6 +223,7 @@ void setup()
     ac.next.model = 1;
     ac.next.celsius = true;
     ac.next.degrees = 25;
+    ac.next.mode = stdAc::opmode_t::kCool;   // 初始化模式，避免状态上报 mode=-1
     ac.next.fanspeed = stdAc::fanspeed_t::kMedium;
     ac.next.swingv = stdAc::swingv_t::kOff;
     ac.next.swingh = stdAc::swingh_t::kOff;
@@ -184,7 +238,8 @@ void setup()
     ac.next.clock = -1;
     ac.next.power = false;
 
-    webServerEx.begin();   // WiFi 配网 + 网页服务
+    wifiManager.begin();   // 非阻塞：有凭据静默连，无凭据直接开配网热点
+    wifiManager.enable();
 
     // HomeKit：setter 必须在 arduino_homekit_setup 之前挂接
     cha_target_temperature.setter = hk_set_target_temperature;
@@ -206,6 +261,22 @@ void setup()
 
 void loop()
 {
+    if (recoveryRestartPending)
+    {
+        if (recoveryIsFactory)
+            ledManager.blinkWhite();   // 恢复出厂：白色闪烁（重启前）
+        if (millis() - recoveryRestartAt >= 800)
+        {
+            recoveryRestartPending = false;
+            recoveryIsFactory = false;
+            ESP.restart();
+        }
+    }
+
+    handleFactoryResetButton();
+
+    wifiManager.loop();   // 配网页/重连退避/热点管理（每轮都跑）
+
     if (otaManager.consumeDownloadRequest())
     {
         stopBackgroundNetwork();
@@ -225,9 +296,36 @@ void loop()
 
     if (!otaKickoffPending && !otaManager.isDownloading())
     {
-        webServerEx.loop();
         arduino_homekit_loop();
-        mqttManager.loop();
+
+        // HomeKit 配对/连接期间暂停 MQTT，释放堆内存
+        // （SRP 加密运算需要较多空闲堆，内存不足会报 code -2 导致配对失败），
+        // 客户端断开后自动恢复。
+        static bool homekitPauseActive = false;
+        const bool homeKitClientActive = arduino_homekit_connected_clients_count() > 0;
+        // 只在未配对时暂停 MQTT（配对需要腾内存）。配对成功后日常控制不再暂停，
+        // 否则 HomeKit 客户端长期连接会导致 MQTT 一直暂停（网页面板用不了）
+        const bool needPause = homeKitClientActive && !homekit_is_paired();
+        if (needPause)
+        {
+            if (!homekitPauseActive)
+            {
+                homekitPauseActive = true;
+                mqttManager.releaseMemoryForPairing();   // 断开 MQTT + 缓冲缩到 64B，腾堆给 SRP
+                Serial.printf("[HomeKit] 客户端连接（未配对），暂停 MQTT，heap=%u maxBlock=%u\n",
+                              ESP.getFreeHeap(), ESP.getMaxFreeBlockSize());
+            }
+        }
+        else
+        {
+            if (homekitPauseActive)
+            {
+                homekitPauseActive = false;
+                mqttManager.restoreMemoryForNormal();   // 恢复 MQTT 缓冲，loop 自动重连
+                Serial.printf("[HomeKit] 已配对或客户端断开，恢复 MQTT，heap=%u\n", ESP.getFreeHeap());
+            }
+            mqttManager.loop();
+        }
         if (pendingOtaPublish.length() > 0 && mqttManager.isConnected())
         {
             mqttManager.publish(pendingOtaPublish);
@@ -246,6 +344,7 @@ void loop()
     int st = otaManager.processDownload(otaErr, pct);
     if (st == OTA_DL_DONE)
     {
+        ledManager.setSteady(CRGB::Green);   // OTA 成功，重启前绿色常亮
         mqttManager.publish("ota=idle");
         mqttManager.publish("ota=ok");
         delay(300);
@@ -253,11 +352,13 @@ void loop()
     }
     else if (st == OTA_DL_ERROR)
     {
+        ledManager.blinkRed();   // OTA 失败：红色闪烁
         queueOtaPublish(String("ota=fail:") + otaErr);
     }
 
     if (otaKickoffPending || otaManager.isDownloading())
     {
+        ledManager.blinkWhite();   // OTA 下载中：白色闪烁
         delay(1);
         yield();
         return;

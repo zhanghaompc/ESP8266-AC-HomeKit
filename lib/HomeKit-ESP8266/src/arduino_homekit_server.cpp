@@ -528,10 +528,29 @@ void write(client_context_t *context, byte *data, int data_size) {
 		CLIENT_ERROR(context, "Abort write data since error_write.");
 		return;
 	}
-	int write_size = context->socket->write(data, data_size);
+	int remaining = data_size;
+	byte *p = data;
+	int total = 0;
+	int tries = 0;
+	// 部分写重试：8266 的 TCP 发送缓冲（TCP_SND_BUF=1072）会被多帧响应积压占满，
+	// 非阻塞 write 会返回部分字节。等缓冲释放后把剩余补发完，避免误判客户端断开。
+	// （Get Accessories 多帧连续发送曾因此断连，导致 iOS 拉不到配件信息）
+	while (remaining > 0) {
+		int w = context->socket->write(p, remaining);
+		if (w > 0) {
+			p += w;
+			remaining -= w;
+			total += w;
+			tries = 0;
+			continue;
+		}
+		if (++tries > 50)   // 缓冲持续满/客户端断开，最多等 ~500ms
+			break;
+		delay(10);
+	}
 	CLIENT_DEBUG(context, "Sending data of size %d", data_size);
-	if (write_size != data_size) {
-		CLIENT_ERROR(context, "socket.write, data_size=%d, write_size=%d", data_size, write_size);
+	if (remaining > 0) {
+		CLIENT_ERROR(context, "socket.write, data_size=%d, write_size=%d", data_size, total);
 		context->error_write = true;
 		// Error write when :
 		// 1. remote client is disconnected
@@ -544,6 +563,7 @@ void write(client_context_t *context, byte *data, int data_size) {
 		// Closing the socket causes memory-leak if some data has not been sent (the write_buffer did not free)
 		// To fix this memory-leak, add tcp_abandon(_pcb, 0); in ClientContext.h of ESP8266WiFi-library.
 	}
+
 
 }
 

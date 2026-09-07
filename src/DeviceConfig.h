@@ -31,5 +31,5 @@ inline String deviceApName()
 // MQTT 主题前缀：ac/esp8266acxxxx（小写）
 inline String deviceMqttBase()
 {
-    return "ac/esp8266ac" + deviceSuffix();
+    return "ac/esp8266/" + deviceSuffix();
 }
