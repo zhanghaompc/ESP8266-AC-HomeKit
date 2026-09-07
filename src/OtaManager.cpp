@@ -12,6 +12,47 @@
 // ESP8266 固件放在 firmware/esp8266/ 下，直接使用 HTTP 拉取，不再走 MQTT 分包升级
 #define OTA_DEFAULT_URL "https://fastly.jsdelivr.net/gh/zhanghaompc/ESP8266-AC-HomeKit@master/firmware/esp8266/esp8266_wifi.bin"
 
+// 按环境取清单字段（与 ESP32 OTA 逻辑对齐）
+#ifndef OTA_ENV_NAME
+#define OTA_ENV_NAME "esp8266"
+#endif
+
+// 多源清单：CDN 主源 → CDN 备用 → raw 直连；master 分支带时间戳防 CDN 缓存
+static const char *OTA_MANIFEST_BASES[] = {
+    "https://cdn.jsdelivr.net/gh/zhanghaompc/ESP8266-AC-HomeKit@master",
+    "https://fastly.jsdelivr.net/gh/zhanghaompc/ESP8266-AC-HomeKit@master",
+    "https://raw.githubusercontent.com/zhanghaompc/ESP8266-AC-HomeKit/master"
+};
+
+// 清单字段支持字符串或按环境对象（如 {"esp8266": "1.0.14"} 或 {"default": "..."}）
+static bool extractManifestString(JsonDocument &doc, const char *field, const char *env, String &out)
+{
+    JsonVariantConst node = doc[field];
+    if (node.is<const char *>())
+    {
+        out = node.as<const char *>();
+        return out.length() > 0;
+    }
+
+    if (node.is<JsonObjectConst>())
+    {
+        JsonObjectConst obj = node.as<JsonObjectConst>();
+        if (obj[env].is<const char *>())
+        {
+            out = obj[env].as<const char *>();
+            return out.length() > 0;
+        }
+        if (obj["default"].is<const char *>())
+        {
+            out = obj["default"].as<const char *>();
+            return out.length() > 0;
+        }
+    }
+
+    return false;
+}
+
+
 void OtaManager::begin()
 {
     if (!LittleFS.exists(OTA_CONFIG_FILE))
@@ -315,16 +356,12 @@ void OtaManager::finishDownload()
 
 bool OtaManager::fetchMetadata(String &remoteVersion, String &remoteUrl, String &errMsg)
 {
-    for (int attempt = 1; attempt <= 2; attempt++)
+    // 版本检查多源依次尝试（对齐 ESP32 OTA 逻辑）：CDN 主源 → CDN 备用 → raw 直连
+    for (size_t baseIndex = 0; baseIndex < sizeof(OTA_MANIFEST_BASES) / sizeof(OTA_MANIFEST_BASES[0]); baseIndex++)
     {
-        String curUrl = url;
-        int slash = curUrl.lastIndexOf('/');
-        if (slash < 0)
-        {
-            errMsg = "OTA url invalid";
-            return false;
-        }
-        String metaUrl = curUrl.substring(0, slash + 1) + "ota.json";
+        // jsDelivr/Fastly 可能缓存 master 分支内容，追加时间戳确保每次检查拿到最新清单
+        String metaUrl = String(OTA_MANIFEST_BASES[baseIndex]) + "/firmware/esp8266/ota.json";
+        metaUrl += "?t=" + String(millis());
         DBG("[OTA] 读取版本清单 %s\n", metaUrl.c_str());
 
         bool isHttps = metaUrl.startsWith("https://");
@@ -333,7 +370,10 @@ bool OtaManager::fetchMetadata(String &remoteVersion, String &remoteUrl, String 
         if (isHttps)
             secureClient.setBufferSizes(512, 512);
         HTTPClient http;
-        http.setTimeout(30000);
+        http.setTimeout(4000);   // 版本检查必须快速返回，避免阻塞 MQTT 心跳被 Broker 踢下线
+        http.useHTTP10(true);    // HTTP/1.0 直传，不协商 chunked
+        http.addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+        http.addHeader("Pragma", "no-cache");
         bool beginOk;
         if (isHttps)
         {
@@ -341,9 +381,7 @@ bool OtaManager::fetchMetadata(String &remoteVersion, String &remoteUrl, String 
             beginOk = http.begin(secureClient, metaUrl);
         }
         else
-        {
             beginOk = http.begin(plainClient, metaUrl);
-        }
         if (!beginOk)
         {
             errMsg = "meta HTTP begin failed";
@@ -356,6 +394,13 @@ bool OtaManager::fetchMetadata(String &remoteVersion, String &remoteUrl, String 
             http.end();
             continue;
         }
+        int metaSize = http.getSize();
+        if (metaSize > 8192)
+        {
+            errMsg = "meta 响应过大";
+            http.end();
+            continue;
+        }
         JsonDocument doc;
         if (deserializeJson(doc, http.getStream()) != DeserializationError::Ok)
         {
@@ -363,8 +408,15 @@ bool OtaManager::fetchMetadata(String &remoteVersion, String &remoteUrl, String 
             http.end();
             continue;
         }
-        remoteVersion = doc["version"] | "";
-        remoteUrl = doc["url"] | "";
+        // 兼容新格式（versions/urls，支持按环境对象）与旧格式（version/url 字符串）
+        remoteVersion = "";
+        remoteUrl = "";
+        extractManifestString(doc, "versions", OTA_ENV_NAME, remoteVersion);
+        if (remoteVersion.length() == 0)
+            extractManifestString(doc, "version", OTA_ENV_NAME, remoteVersion);
+        extractManifestString(doc, "urls", OTA_ENV_NAME, remoteUrl);
+        if (remoteUrl.length() == 0)
+            extractManifestString(doc, "url", OTA_ENV_NAME, remoteUrl);
         http.end();
         if (remoteVersion.length() == 0)
         {
@@ -373,8 +425,48 @@ bool OtaManager::fetchMetadata(String &remoteVersion, String &remoteUrl, String 
         }
         return true;
     }
+
+    // 多源都失败时，最后回退：从当前配置的固件 URL 推断同目录 ota.json
+    int slash = url.lastIndexOf('/');
+    if (slash > 0)
+    {
+        String metaUrl = url.substring(0, slash + 1) + "ota.json";
+        DBG("[OTA] 回退读取版本清单 %s\n", metaUrl.c_str());
+        bool isHttps = metaUrl.startsWith("https://");
+        WiFiClient plainClient;
+        WiFiClientSecure secureClient;
+        if (isHttps)
+            secureClient.setBufferSizes(512, 512);
+        HTTPClient http;
+        http.setTimeout(4000);
+        bool beginOk;
+        if (isHttps)
+        {
+            secureClient.setInsecure();
+            beginOk = http.begin(secureClient, metaUrl);
+        }
+        else
+            beginOk = http.begin(plainClient, metaUrl);
+        if (beginOk && http.GET() == HTTP_CODE_OK)
+        {
+            JsonDocument doc;
+            if (deserializeJson(doc, http.getStream()) == DeserializationError::Ok)
+            {
+                remoteVersion = doc["version"] | "";
+                remoteUrl = doc["url"] | "";
+                if (remoteVersion.length() > 0)
+                {
+                    http.end();
+                    return true;
+                }
+            }
+        }
+        http.end();
+        errMsg = "meta 缺少 version 字段";
+    }
     return false;
 }
+
 
 bool OtaManager::isVersionNewer(const String &remote, const String &current) const
 {
