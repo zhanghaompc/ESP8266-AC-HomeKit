@@ -17,11 +17,15 @@
 #define OTA_ENV_NAME "esp8266"
 #endif
 
-// 多源清单：CDN 主源 → CDN 备用 → raw 直连；master 分支带时间戳防 CDN 缓存
-static const char *OTA_MANIFEST_BASES[] = {
-    "https://cdn.jsdelivr.net/gh/zhanghaompc/ESP8266-AC-HomeKit@master",
-    "https://fastly.jsdelivr.net/gh/zhanghaompc/ESP8266-AC-HomeKit@master",
-    "https://raw.githubusercontent.com/zhanghaompc/ESP8266-AC-HomeKit/master"
+// 多源清单：GitHub Pages 即时更新（首选）→ jsDelivr CDN（@master 缓存约 12h）→ raw 直连
+// jsDelivr 对 @master 分支的缓存长达 12 小时且忽略查询参数，版本发布后设备
+// 可能长时间拿到旧清单；Pages 源（zhanghaompc.github.io/mqtt-control）分钟级更新，
+// 作为首选避免 CDN 缓存旧版
+static const char *OTA_MANIFEST_URLS[] = {
+    "https://zhanghaompc.github.io/mqtt-control/firmware/ota_esp8266.json",
+    "https://cdn.jsdelivr.net/gh/zhanghaompc/ESP8266-AC-HomeKit@master/firmware/esp8266/ota.json",
+    "https://fastly.jsdelivr.net/gh/zhanghaompc/ESP8266-AC-HomeKit@master/firmware/esp8266/ota.json",
+    "https://raw.githubusercontent.com/zhanghaompc/ESP8266-AC-HomeKit/master/firmware/esp8266/ota.json"
 };
 
 // 清单字段支持字符串或按环境对象（如 {"esp8266": "1.0.14"} 或 {"default": "..."}）
@@ -357,10 +361,10 @@ void OtaManager::finishDownload()
 bool OtaManager::fetchMetadata(String &remoteVersion, String &remoteUrl, String &errMsg)
 {
     // 版本检查多源依次尝试（对齐 ESP32 OTA 逻辑）：CDN 主源 → CDN 备用 → raw 直连
-    for (size_t baseIndex = 0; baseIndex < sizeof(OTA_MANIFEST_BASES) / sizeof(OTA_MANIFEST_BASES[0]); baseIndex++)
+    for (size_t baseIndex = 0; baseIndex < sizeof(OTA_MANIFEST_URLS) / sizeof(OTA_MANIFEST_URLS[0]); baseIndex++)
     {
         // jsDelivr/Fastly 可能缓存 master 分支内容，追加时间戳确保每次检查拿到最新清单
-        String metaUrl = String(OTA_MANIFEST_BASES[baseIndex]) + "/firmware/esp8266/ota.json";
+        String metaUrl = OTA_MANIFEST_URLS[baseIndex];
         metaUrl += "?t=" + String(millis());
         DBG("[OTA] 读取版本清单 %s\n", metaUrl.c_str());
 
