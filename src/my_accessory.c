@@ -16,14 +16,14 @@ homekit_characteristic_t cha_current_temperature           = HOMEKIT_CHARACTERIS
 homekit_characteristic_t cha_target_temperature            = HOMEKIT_CHARACTERISTIC_(TARGET_TEMPERATURE, 26, .min_step = (float[]) {1});
 homekit_characteristic_t cha_temperature_display_units     = HOMEKIT_CHARACTERISTIC_(TEMPERATURE_DISPLAY_UNITS, 0);
 homekit_characteristic_t cha_current_relative_humidity     = HOMEKIT_CHARACTERISTIC_(CURRENT_RELATIVE_HUMIDITY, 50);
-homekit_characteristic_t cha_name                          = HOMEKIT_CHARACTERISTIC_(NAME, "空调控制器");
+homekit_characteristic_t cha_name                          = HOMEKIT_CHARACTERISTIC_(NAME, "ESP8266AC");
 homekit_characteristic_t cha_fan_active                    = HOMEKIT_CHARACTERISTIC_(ACTIVE, 1);
 homekit_characteristic_t cha_fan_rotation_speed            = HOMEKIT_CHARACTERISTIC_(ROTATION_SPEED, 50);
 
 homekit_accessory_t *accessories[] = {
 	HOMEKIT_ACCESSORY(.id=1, .category=homekit_accessory_category_thermostat, .services=(homekit_service_t*[]) {
 		HOMEKIT_SERVICE(ACCESSORY_INFORMATION, .characteristics=(homekit_characteristic_t*[]) {
-			HOMEKIT_CHARACTERISTIC(NAME, "空调控制器"),
+			HOMEKIT_CHARACTERISTIC(NAME, "ESP8266AC"),
 			HOMEKIT_CHARACTERISTIC(MANUFACTURER, "ESP8266 HomeKit"),
 			HOMEKIT_CHARACTERISTIC(SERIAL_NUMBER, "8266AC01"),
 			HOMEKIT_CHARACTERISTIC(MODEL, "AC-IR-CONTROLLER"),

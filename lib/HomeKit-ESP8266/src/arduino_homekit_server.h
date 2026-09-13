@@ -227,6 +227,8 @@ typedef struct _client_event {
 
 void arduino_homekit_setup(homekit_server_config_t *config);
 void arduino_homekit_loop();
+// Rebuild the HAP mDNS record after a late WiFi connection or IP change.
+void arduino_homekit_mdns_restart();
 
 homekit_server_t * arduino_homekit_get_running_server();
 int arduino_homekit_connected_clients_count();

@@ -29,21 +29,26 @@ String lastProtocolName = "KELVINATOR";
 float envTemperature = 25.0;
 float enHumidity = 50.0;
 int acTargetTemp = 26;
-int acTargetMode = 0;   // 0=关 1=制热 2=制冷 3=自动
-int acFanSpeed = 2;     // 0=自动 1=低速 2=中速 3=高速 4=最大
+int acTargetMode = 0; // 0=关 1=制热 2=制冷 3=自动
+int acFanSpeed = 2;   // 0=自动 1=低速 2=中速 3=高速 4=最大
 bool acPower = false;
-bool fanSwitch = true;  // 风扇开关（独立于空调电源）
+bool fanSwitch = true; // 风扇开关（独立于空调电源）
 
 // 风速档位 -> HomeKit 百分比（0/25/50/75/100）
 static float fanSpeedToPct(int s)
 {
     switch (s)
     {
-        case 0: return 0.0f;
-        case 1: return 25.0f;
-        case 2: return 50.0f;
-        case 3: return 75.0f;
-        default: return 100.0f;
+    case 0:
+        return 0.0f;
+    case 1:
+        return 25.0f;
+    case 2:
+        return 50.0f;
+    case 3:
+        return 75.0f;
+    default:
+        return 100.0f;
     }
 }
 
@@ -65,7 +70,7 @@ static String pendingOtaPublish = "";
 
 // 重新配网/恢复出厂命令的延迟重启（先让 MQTT 把回复发出去）
 bool recoveryRestartPending = false;
-bool recoveryIsFactory = false;   // true=恢复出厂类（重启前白闪），false=重新配网
+bool recoveryIsFactory = false; // true=恢复出厂类（重启前白闪），false=重新配网
 unsigned long recoveryRestartAt = 0;
 
 static void stopBackgroundNetwork()
@@ -93,7 +98,7 @@ static void handleFactoryResetButton()
         if (!keyArmed && held >= 1500)
         {
             keyArmed = true;
-            ledManager.setSteady(CRGB::Yellow);   // 等待恢复出厂：黄色常亮
+            ledManager.setSteady(CRGB::Yellow); // 等待恢复出厂：黄色常亮
             Serial.println("[按键] 长按 1.5s，进入恢复出厂等待（继续按住到 3s 执行）");
         }
         if (keyArmed && held >= 3000)
@@ -101,7 +106,7 @@ static void handleFactoryResetButton()
             keyArmed = false;
             keyPressedAt = 0;
             Serial.println("[按键] 执行恢复出厂设置");
-            LittleFS.remove("/wifi.json");  // 清配网凭据
+            LittleFS.remove("/wifi.json");    // 清配网凭据
             ESP.eraseConfig();                // 清 SDK 旧凭据（重启后生效）
             homekit_storage_reset();          // 清 HomeKit 配对
             LittleFS.remove("/timers.txt");   // 清定时任务
@@ -116,7 +121,7 @@ static void handleFactoryResetButton()
         if (keyArmed)
         {
             keyArmed = false;
-            ledManager.off();   // 未按满 3s，取消恢复出厂
+            ledManager.off(); // 未按满 3s，取消恢复出厂
         }
         keyPressedAt = 0;
     }
@@ -126,15 +131,23 @@ static void handleFactoryResetButton()
 void hkSendAc()
 {
     if (acTargetMode < 0 || acTargetMode > 3)
-        acTargetMode = 2;   // 异常值兜底为制冷
+        acTargetMode = 2; // 异常值兜底为制冷
     bool powerOn = (acTargetMode != 0);
     int sendMode;
     switch (acTargetMode)
     {
-        case 0: sendMode = (int)stdAc::opmode_t::kOff; break;
-        case 1: sendMode = (int)stdAc::opmode_t::kHeat; break;
-        case 2: sendMode = (int)stdAc::opmode_t::kCool; break;
-        default: sendMode = (int)stdAc::opmode_t::kAuto; break;
+    case 0:
+        sendMode = (int)stdAc::opmode_t::kOff;
+        break;
+    case 1:
+        sendMode = (int)stdAc::opmode_t::kHeat;
+        break;
+    case 2:
+        sendMode = (int)stdAc::opmode_t::kCool;
+        break;
+    default:
+        sendMode = (int)stdAc::opmode_t::kAuto;
+        break;
     }
     int sendSpeed = (acTargetMode == 3) ? 0 : acFanSpeed;
     irManager.send(acTargetTemp, sendSpeed, sendMode, powerOn);
@@ -172,15 +185,20 @@ extern "C" void hk_set_fan_active(const homekit_value_t value)
 extern "C" void hk_set_fan_rotation_speed(const homekit_value_t value)
 {
     int pct = (int)(value.float_value + 0.5f);
-    if (pct <= 0) acFanSpeed = 0;        // 自动
-    else if (pct <= 25) acFanSpeed = 1;  // 低速
-    else if (pct <= 50) acFanSpeed = 2;  // 中速
-    else if (pct <= 75) acFanSpeed = 3;  // 高速
-    else acFanSpeed = 4;                 // 最大
+    if (pct <= 0)
+        acFanSpeed = 0; // 自动
+    else if (pct <= 25)
+        acFanSpeed = 1; // 低速
+    else if (pct <= 50)
+        acFanSpeed = 2; // 中速
+    else if (pct <= 75)
+        acFanSpeed = 3; // 高速
+    else
+        acFanSpeed = 4; // 最大
     cha_fan_rotation_speed.value.float_value = fanSpeedToPct(acFanSpeed);
     homekit_characteristic_notify(&cha_fan_rotation_speed, cha_fan_rotation_speed.value);
     if (acTargetMode != 0)
-        hkSendAc();   // 空调开着才重新发红外
+        hkSendAc(); // 空调开着才重新发红外
 }
 
 void reportHomeKit()
@@ -204,15 +222,17 @@ void reportHomeKit()
 void setup()
 {
     Serial.begin(115200);
-    Serial.printf("[FW] ESP8266 空调控制器 固件版本 %s\n", FW_VERSION);
+    Serial.printf("[FW] ESP8266AC 固件版本 %s\n", FW_VERSION);
     if (!LittleFS.begin())
         Serial.println("LittleFS 初始化失败");
+#if OTA_ENABLED
     otaManager.begin();
+#endif
 
     ledManager.begin();
-    ledManager.off();   // 上电初始化：熄灭
+    ledManager.off(); // 上电初始化：熄灭
 
-    pinMode(KEY_PIN, INPUT_PULLUP);   // BOOT 按键（按下为低）
+    pinMode(KEY_PIN, INPUT_PULLUP); // BOOT 按键（按下为低）
 
     sensorManager.begin();
     irManager.begin();
@@ -224,7 +244,7 @@ void setup()
     ac.next.model = 1;
     ac.next.celsius = true;
     ac.next.degrees = 25;
-    ac.next.mode = stdAc::opmode_t::kCool;   // 初始化模式，避免状态上报 mode=-1
+    ac.next.mode = stdAc::opmode_t::kCool; // 初始化模式，避免状态上报 mode=-1
     ac.next.fanspeed = stdAc::fanspeed_t::kMedium;
     ac.next.swingv = stdAc::swingv_t::kOff;
     ac.next.swingh = stdAc::swingh_t::kOff;
@@ -239,7 +259,7 @@ void setup()
     ac.next.clock = -1;
     ac.next.power = false;
 
-    wifiManager.begin();   // 非阻塞：有凭据静默连，无凭据直接开配网热点
+    wifiManager.begin(); // 非阻塞：有凭据静默连，无凭据直接开配网热点
     wifiManager.enable();
 
     // HomeKit：setter 必须在 arduino_homekit_setup 之前挂接
@@ -254,7 +274,7 @@ void setup()
     cha_fan_active.setter = hk_set_fan_active;
     cha_fan_rotation_speed.setter = hk_set_fan_rotation_speed;
     arduino_homekit_setup(&config);
-    Serial.println("HomeKit 已启动，配对码 111-11-111");
+    Serial.println("HomeKit ESP8266AC 已启动，配对码 111-11-111");
 
     mqttManager.begin();
     Serial.println("系统初始化完成");
@@ -265,7 +285,7 @@ void loop()
     if (recoveryRestartPending)
     {
         if (recoveryIsFactory)
-            ledManager.blinkWhite();   // 恢复出厂：白色闪烁（重启前）
+            ledManager.blinkWhite(); // 恢复出厂：白色闪烁（重启前）
         if (millis() - recoveryRestartAt >= 800)
         {
             recoveryRestartPending = false;
@@ -276,8 +296,9 @@ void loop()
 
     handleFactoryResetButton();
 
-    wifiManager.loop();   // 配网页/重连退避/热点管理（每轮都跑）
+    wifiManager.loop(); // 配网页/重连退避/热点管理（每轮都跑）
 
+#if OTA_ENABLED
     if (otaManager.consumeDownloadRequest())
     {
         stopBackgroundNetwork();
@@ -294,9 +315,19 @@ void loop()
             queueOtaPublish(String("ota=fail:") + otaErr);
         }
     }
+#endif
 
     if (!otaKickoffPending && !otaManager.isDownloading())
     {
+        // mDNS 兜底：WiFi 已连接时周期性重启 HAP mDNS，防止路由器 mDNS
+        // 缓存过期或首次广播丢失导致家庭 App 发现不到配件。
+        static unsigned long lastMdnsKeepAlive = 0;
+        if (WiFi.status() == WL_CONNECTED && millis() - lastMdnsKeepAlive > 300000UL)
+        {
+            lastMdnsKeepAlive = millis();
+            arduino_homekit_mdns_restart();
+        }
+
         arduino_homekit_loop();
 
         // HomeKit 配对/连接期间暂停 MQTT，释放堆内存
@@ -312,7 +343,7 @@ void loop()
             if (!homekitPauseActive)
             {
                 homekitPauseActive = true;
-                mqttManager.releaseMemoryForPairing();   // 断开 MQTT + 缓冲缩到 64B，腾堆给 SRP
+                mqttManager.releaseMemoryForPairing(); // 断开 MQTT + 缓冲缩到 64B，腾堆给 SRP
                 Serial.printf("[HomeKit] 客户端连接（未配对），暂停 MQTT，heap=%u maxBlock=%u\n",
                               ESP.getFreeHeap(), ESP.getMaxFreeBlockSize());
             }
@@ -322,7 +353,7 @@ void loop()
             if (homekitPauseActive)
             {
                 homekitPauseActive = false;
-                mqttManager.restoreMemoryForNormal();   // 恢复 MQTT 缓冲，loop 自动重连
+                mqttManager.restoreMemoryForNormal(); // 恢复 MQTT 缓冲，loop 自动重连
                 Serial.printf("[HomeKit] 已配对或客户端断开，恢复 MQTT，heap=%u\n", ESP.getFreeHeap());
             }
             mqttManager.loop();
@@ -334,6 +365,7 @@ void loop()
         }
     }
 
+#if OTA_ENABLED
     if (otaManager.consumeRestart())
     {
         delay(500);
@@ -345,7 +377,7 @@ void loop()
     int st = otaManager.processDownload(otaErr, pct);
     if (st == OTA_DL_DONE)
     {
-        ledManager.setSteady(CRGB::Green);   // OTA 成功，重启前绿色常亮
+        ledManager.setSteady(CRGB::Green); // OTA 成功，重启前绿色常亮
         mqttManager.publish("ota=idle");
         mqttManager.publish("ota=ok");
         delay(300);
@@ -353,17 +385,18 @@ void loop()
     }
     else if (st == OTA_DL_ERROR)
     {
-        ledManager.blinkRed();   // OTA 失败：红色闪烁
+        ledManager.blinkRed(); // OTA 失败：红色闪烁
         queueOtaPublish(String("ota=fail:") + otaErr);
     }
 
     if (otaKickoffPending || otaManager.isDownloading())
     {
-        ledManager.blinkWhite();   // OTA 下载中：白色闪烁
+        ledManager.blinkWhite(); // OTA 下载中：白色闪烁
         delay(1);
         yield();
         return;
     }
+#endif
 
     sensorManager.loop();
     timerManager.loop();

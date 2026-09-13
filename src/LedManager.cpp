@@ -6,16 +6,18 @@ void LedManager::begin()
 {
     FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, NUM_LEDS);
     FastLED.setBrightness(50);
-    steadyColor = CRGB::Black;
-    leds[0] = CRGB::Black;
-    lastShown = CRGB::Black;
-    FastLED.show();
+    off();
 }
 
 // 兼容旧调用：一次短暂的颜色闪烁
 void LedManager::setColor(CRGB color)
 {
-    flash(color, 150);
+    blinking = false;
+    steadyColor = color;
+    flashUntil = 0;
+    leds[0] = color;
+    lastShown = color;
+    FastLED.show();
 }
 
 // 瞬闪：覆盖稳态颜色一段时间，结束后回到稳态颜色
@@ -23,6 +25,12 @@ void LedManager::flash(CRGB color, unsigned long duration)
 {
     flashColor = color;
     flashUntil = millis() + duration;
+    // Refresh immediately. IR transmission can block the main loop long
+    // enough for a short flash to expire before update() runs.
+    blinking = false;
+    leds[0] = color;
+    lastShown = color;
+    FastLED.show();
 }
 
 // 设置稳态颜色（比如正常运行显示蓝色）
@@ -30,6 +38,10 @@ void LedManager::setSteady(CRGB color)
 {
     steadyColor = color;
     blinking = false;
+    flashUntil = 0;
+    leds[0] = color;
+    lastShown = color;
+    FastLED.show();
 }
 
 void LedManager::blinkGreen()
@@ -74,13 +86,21 @@ void LedManager::blinkYellow()
     lastBlinkTime = millis(); leds[0] = blinkColor; FastLED.show();
 }
 
-void LedManager::stopBlink() { blinking = false; }
+void LedManager::stopBlink()
+{
+    blinking = false;
+    blinkState = false;
+}
 
 void LedManager::off()
 {
     steadyColor = CRGB::Black;
     flashUntil = 0;
     blinking = false;
+    blinkState = false;
+    leds[0] = CRGB::Black;
+    lastShown = CRGB::Black;
+    FastLED.show();
 }
 
 void LedManager::update()

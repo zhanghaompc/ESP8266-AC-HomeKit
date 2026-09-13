@@ -3,6 +3,7 @@
 #include "TimerManager.h"
 #include "IrManager.h"
 #include "DeviceConfig.h"
+#include <arduino_homekit_server.h>
 #include <Arduino.h>
 #include <LittleFS.h>
 #include <ArduinoJson.h>
@@ -24,6 +25,9 @@ WifiManagerEx::WifiManagerEx() : configServer(80) {}
 
 void WifiManagerEx::begin()
 {
+    // DHCP/mDNS 主机名必须在 WiFi.begin() 之前设置才生效；
+    // 用 ASCII 设备名（esp8266ac-xxxx），避免中文主机名导致路由器拒绝或乱码。
+    WiFi.hostname(deviceHostname().c_str());
     // 允许 WiFi 驱动在短暂丢包/漫游后自动恢复，减少设备长期离线。
     WiFi.setAutoReconnect(true);
     WiFi.persistent(true);
@@ -161,6 +165,9 @@ void WifiManagerEx::checkWiFiConnection()
                 ledManager.off(); // WiFi 已连接 = 熄灭
             }
             Serial.printf("[WiFi] 已连接！IP: %s\n", WiFi.localIP().toString().c_str());
+            // The STA may obtain its IP before HomeKit's WiFi event handler is
+            // registered. Re-announce HAP here so Home can discover the device.
+            arduino_homekit_mdns_restart();
             timerManager.syncTime();
 
             // 连上就关掉配网热点：AP_STA 长期共存会拖累 STA，

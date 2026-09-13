@@ -33,6 +33,10 @@
 #define HOMEKIT_MAX_CLIENTS      8
 #define HOMEKIT_MDNS_SERVICE     "hap"//"_hap"
 #define HOMEKIT_MDNS_PROTO       "tcp"//"_tcp"
+// mDNS hostname must be a valid ASCII label (RFC 1035).
+// A non-ASCII accessory name (e.g. Chinese) here makes some routers/iOS
+// fail to discover the _hap._tcp service.
+#define HOMEKIT_MDNS_HOSTNAME    "ESP8266AC"
 #define HOMEKIT_EVENT_QUEUE_SIZE 4 //original is 20
 #define HOMEKIT_SOCKET_TIMEOUT   500 //milliseconds
 
@@ -3146,6 +3150,8 @@ void homekit_server_process(homekit_server_t *server) {
 // Arduino ESP8266 MDNS: call this funciton only once when WiFi STA is connected!
 //=====================================================
 bool homekit_mdns_started = false;
+static unsigned long homekit_mdns_boost_until = 0;
+static unsigned long homekit_mdns_last_boost = 0;
 
 void homekit_mdns_init(homekit_server_t *server) {
 	INFO("Configuring MDNS");
@@ -3183,20 +3189,23 @@ void homekit_mdns_init(homekit_server_t *server) {
 
 	if (homekit_mdns_started) {
 		MDNS.close();
-		INFO("MDNS restart: %s, IP: %s", name->value.string_value, staIP.toString().c_str());
+		INFO("MDNS restart: %s, IP: %s", HOMEKIT_MDNS_HOSTNAME, staIP.toString().c_str());
 	}
 
 	//homekit_mdns_configure_init(name->value.string_value, PORT);
-	WiFi.hostname(name->value.string_value);
+	WiFi.hostname(HOMEKIT_MDNS_HOSTNAME);
 	// Must specify the MDNS runs on the IP of STA
-	MDNS.begin(name->value.string_value, staIP);
+	MDNS.begin(HOMEKIT_MDNS_HOSTNAME, staIP);
 	if (homekit_mdns_started) {
-		INFO("MDNS re-register: %s, IP: %s", name->value.string_value, staIP.toString().c_str());
+		INFO("MDNS re-register: %s, IP: %s", HOMEKIT_MDNS_HOSTNAME, staIP.toString().c_str());
 	} else {
-		INFO("MDNS begin: %s, IP: %s", name->value.string_value, staIP.toString().c_str());
+		INFO("MDNS begin: %s, IP: %s", HOMEKIT_MDNS_HOSTNAME, staIP.toString().c_str());
 	}
 
-	MDNSResponder::hMDNSService mdns_service = MDNS.addService(name->value.string_value,
+	// Use an ASCII mDNS service instance. Some routers render UTF-8 Chinese
+	// instance names with the wrong code page and show mojibake in their
+	// network device list. HomeKit still gets the accessory name from HAP.
+	MDNSResponder::hMDNSService mdns_service = MDNS.addService(HOMEKIT_MDNS_HOSTNAME,
 	HOMEKIT_MDNS_SERVICE, HOMEKIT_MDNS_PROTO, HOMEKIT_SERVER_PORT);
 	// Set a service specific callback for dynamic service TXT items.
 	// The callback is called, whenever service TXT items are needed for the given service.
@@ -3215,6 +3224,10 @@ void homekit_mdns_init(homekit_server_t *server) {
 	MDNS.addServiceTxt(mdns_service, "md", model->value.string_value);
 	MDNS.addServiceTxt(mdns_service, "pv", "1.0");
 	MDNS.addServiceTxt(mdns_service, "id", server->accessory_id);
+	// HomeKit discovery requires these TXT records to be present in the
+	// initial mDNS response.  Do not rely only on the dynamic callback:
+	// some ESP8266 mDNS versions do not invoke it for the first announce.
+	MDNS.addServiceTxt(mdns_service, "c#", String(server->config->config_number).c_str());
 	//"c#" is a DynamicServiceTxt
 	//Current configuration number. Required.
 	//Must update when an accessory, service, or characteristic is added or removed on the accessory server.
@@ -3224,6 +3237,7 @@ void homekit_mdns_init(homekit_server_t *server) {
 	//MDNS.addServiceTxt(mdns_service, "c#", String(server->config->config_number).c_str());
 	MDNS.addServiceTxt(mdns_service, "s#", "1");
 	MDNS.addServiceTxt(mdns_service, "ff", "0");
+	MDNS.addServiceTxt(mdns_service, "sf", (server->paired) ? "0" : "1");
 	//"sf" is a DynamicServiceTxt
 	//MDNS.addServiceTxt(HAP_SERVICE, HOMEKIT_MDNS_PROTO, "sf", (server->paired) ? "0" : "1");
 	MDNS.addServiceTxt(mdns_service, "ci", String(server->config->category).c_str());
@@ -3276,6 +3290,10 @@ void homekit_mdns_init(homekit_server_t *server) {
 	MDNS.announce();
 	MDNS.update();
 	homekit_mdns_started = true;
+	// Repeat announcements for a short window after startup/IP changes. This
+	// helps iOS discover the accessory when the first multicast packet is lost.
+	homekit_mdns_boost_until = millis() + 30000UL;
+	homekit_mdns_last_boost = millis();
 	//INFO("MDNS ok! Open your \"Home\" app, click \"Add or Scan Accessory\""
 	//		" and \"I Don't Have a Code\". \nThis Accessory will show on your iOS device.");
 }
@@ -3603,9 +3621,22 @@ void arduino_homekit_setup(homekit_server_config_t *config) {
 	});
 }
 
+void arduino_homekit_mdns_restart() {
+	if (running_server && WiFi.isConnected()) {
+		homekit_mdns_init(running_server);
+	}
+}
+
 void arduino_homekit_loop() {
 	if (homekit_mdns_started) {
 		MDNS.update();
+		if (homekit_mdns_boost_until && millis() < homekit_mdns_boost_until &&
+			millis() - homekit_mdns_last_boost >= 2000UL) {
+			MDNS.announce();
+			homekit_mdns_last_boost = millis();
+		}
+		if (homekit_mdns_boost_until && millis() >= homekit_mdns_boost_until)
+			homekit_mdns_boost_until = 0;
 	}
 	if (running_server != nullptr) {
 		if (!running_server->paired) {

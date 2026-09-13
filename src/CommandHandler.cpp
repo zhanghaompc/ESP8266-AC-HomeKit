@@ -3,6 +3,7 @@
 #include "TimerManager.h"
 #include "OtaManager.h"
 #include "Debug.h"
+#include "DeviceConfig.h"
 #include <map>
 #include <LittleFS.h>
 #include <IRremoteESP8266.h>
@@ -355,6 +356,7 @@ String handleCommand(const String &cmd)
         return "reset=ok";   // 面板按 reset=ok 识别
     }
 
+#if OTA_ENABLED
     // OTA：面板从 GitHub 查到最新版本后下发固定地址（手机端免手动设置）
     if (cmd.startsWith("ota=seturl "))
     {
@@ -394,6 +396,10 @@ String handleCommand(const String &cmd)
         otaManager.requestDownload();
         return String("ota=start fw=") + otaManager.getVersion();
     }
+#else
+    if (cmd.startsWith("ota="))
+        return "ota=disabled";
+#endif
 
     return "unknown_cmd:" + cmd;
 }
